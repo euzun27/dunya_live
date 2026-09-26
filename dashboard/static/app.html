@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JARVIS Dashboard</title>
+  <title>DÜNYATEK Panel</title>
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -136,20 +136,20 @@
 <body>
   <div id="toast"></div>
   <header>
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
+    <div class="logo"><em>D</em>ÜNYATEK</div>
+    <div class="pill" id="pill"><span class="dot"></span><span id="st">Bağlanıyor</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
-    <label class="btn-attach" for="file-inp" title="Send file">📎</label>
+    <input id="inp" placeholder="DÜNYATEK'e bir komut yazın…" autocomplete="off">
+    <label class="btn-attach" for="file-inp" title="Dosya gönder">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
-    <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
+    <button id="mic-btn" onclick="doMic()" title="Sesli komut">🎤</button>
+    <button class="btn btn-wake" id="wake" onclick="doWake()">UYANDIR</button>
+    <button class="btn btn-send" onclick="doSend()">GÖNDER</button>
   </footer>
 
   <script>
@@ -210,14 +210,14 @@
     const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
     const ws       = new WebSocket(_wsUrl);
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
-    ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
-    ws.onerror   = () => sys('Connection error.');
+    ws.onopen    = () => { sys('Uzak oturum açık.'); toast('DÜNYATEK\'e bağlandı'); };
+    ws.onclose   = () => sys('Bağlantı koptu — yeniden bağlanmak için sayfayı yenileyin.');
+    ws.onerror   = () => sys('Bağlantı hatası.');
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.type === 'log')           append(m.speaker, m.text);
       if (m.type === 'status')        setStatus(m.state);
-      if (m.type === 'wake')          sys('Wake word detected — connecting…');
+      if (m.type === 'wake')          sys('Uyandırma sözü algılandı — bağlanıyor…');
       if (m.type === 'sys')           sys(m.text);
       if (m.type === 'file_received') _onFileReceived(m);
     };
@@ -234,7 +234,7 @@
       const d = document.createElement('div');
       if (speaker === 'jarvis') {
         d.className = 'msg msg-j';
-        d.innerHTML = `<div class="lbl">Jarvis</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">DÜNYATEK</div>${esc(text)}`;
       } else {
         d.className = 'msg msg-u';
         d.innerHTML = `<div class="lbl">You</div>${esc(text)}`;
@@ -286,7 +286,7 @@
       card.innerHTML = `
         <div class="fc-icon">${_fileIcon(file.name)}</div>
         <div class="fc-meta">
-          <div class="fc-lbl">Sending</div>
+          <div class="fc-lbl">Gönderiliyor</div>
           <div class="fc-name">${esc(file.name)}</div>
           <div class="fc-size">${_fmtSize(file.size)}</div>
           <div class="fc-bar-wrap"><div class="fc-bar" id="${id}_bar"></div></div>
@@ -323,7 +323,7 @@
           if (lbl)  lbl.textContent = 'Sent';
           if (meta) meta.insertAdjacentHTML('beforeend',
             `<a class="fc-dl" href="${dlUrl}" download="${esc(savedName)}">⬇ Download back</a>`);
-          toast('File sent!');
+          toast('Dosya gönderildi!');
         } else {
           let errMsg = 'Upload failed';
           try { errMsg = JSON.parse(xhr.responseText).error || errMsg; } catch {}
@@ -353,7 +353,7 @@
       card.innerHTML = `
         <div class="fc-icon">${_fileIcon(m.name)}</div>
         <div class="fc-meta">
-          <div class="fc-lbl">Received</div>
+          <div class="fc-lbl">Alındı</div>
           <div class="fc-name">${esc(m.name)}</div>
           <div class="fc-size">${_fmtSize(m.size)}</div>
           <a class="fc-dl" href="${dlUrl}" download="${esc(m.name)}">⬇ Download</a>
@@ -362,7 +362,7 @@
       `;
       feed.appendChild(card);
       feed.scrollTop = feed.scrollHeight;
-      toast('File received on computer!');
+      toast('Dosya bilgisayara ulaştı!');
     }
 
     // File input change handler
@@ -388,7 +388,7 @@
     }
 
     function doWake() {
-      sys('Sending wake signal…');
+      sys('Uyandırma sinyali gönderiliyor…');
       _authFetch('/api/wake', { method: 'POST' });
     }
 
@@ -458,7 +458,7 @@
       feed.scrollTop = feed.scrollHeight;
       // tap to copy
       card.querySelector('#flags-url').addEventListener('click', () => {
-        navigator.clipboard?.writeText(origin).then(() => toast('URL copied!')).catch(() => {});
+        navigator.clipboard?.writeText(origin).then(() => toast('Adres kopyalandı!')).catch(() => {});
       });
     }
 
@@ -532,12 +532,12 @@
         micBtn.innerHTML = '⏹';
         micBtn.title     = 'Tap to stop';
         micBtn.classList.add('recording');
-        sys('Voice live — speak now');
-        toast('🎤 Live');
+        sys('Ses açık — konuşabilirsiniz');
+        toast('🎤 Canlı');
       };
 
       ws.onclose = () => { _stopVoice(); };
-      ws.onerror = () => { sys('Voice connection failed.'); _stopVoice(); };
+      ws.onerror = () => { sys('Ses bağlantısı kurulamadı.'); _stopVoice(); };
 
       _voiceWs  = ws;
       _audioCtx = ctx;

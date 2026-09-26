@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>JARVIS</title>
+  <title>DÜNYATEK</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -134,21 +134,21 @@
 </head>
 <body>
   <div class="card" id="card">
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="sub">Remote Access</div>
-    <p id="reconnecting">Reconnecting…</p>
-    <p class="hint">Press <strong style="color:var(--text)">Remote Control</strong> in the JARVIS desktop app to get a QR code or session key.</p>
+    <div class="logo"><em>D</em>ÜNYATEK</div>
+    <div class="sub">Uzaktan Erişim</div>
+    <p id="reconnecting">Yeniden bağlanıyor…</p>
+    <p class="hint">QR kod veya bağlantı anahtarı almak için bilgisayardaki DÜNYATEK programında <strong style="color:var(--text)">Remote Control</strong> düğmesine basın.</p>
     <div class="key-wrap">
       <input class="key-input" id="key" type="text" maxlength="6"
              autocomplete="off" autocorrect="off" spellcheck="false"
              placeholder="· · · · · ·">
     </div>
     <div class="err" id="err"></div>
-    <button class="btn" onclick="doLogin()">CONNECT</button>
+    <button class="btn" onclick="doLogin()">BAĞLAN</button>
     <p class="voice-note">
-      🎤 <strong style="color:var(--text)">Voice commands:</strong> open
-      <code>chrome://flags</code> on your phone, search
-      <code>Insecure origins treated as secure</code>, add your JARVIS URL, tap Relaunch.
+      🎤 <strong style="color:var(--text)">Sesli komut için:</strong> telefonda
+      <code>chrome://flags</code> sayfasını açın, <code>Insecure origins treated as secure</code>
+      aratın, bu sayfanın adresini ekleyip Relaunch'a basın. (DÜNYATEK telefon uygulamasında buna gerek yoktur.)
     </p>
   </div>
 

@@ -826,7 +826,13 @@ class JarvisLive:
         key    = self._dashboard.new_key()
         url    = self._dashboard.get_url()
         manual = self._dashboard.get_manual_url()
-        return url, key, f"{url}/auto-login?key={key}", manual
+        qr = f"{url}/auto-login?key={key}"
+        # The DUNYATEK phone app also tries this PC's Tailscale address, so the QR
+        # code pairs even when the phone is not on the same Wi-Fi.
+        hosts = self._dashboard._hosts()
+        if len(hosts) > 1:
+            qr += "&ts=" + ",".join(hosts[1:])
+        return url, key, qr, manual
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -913,8 +919,17 @@ class JarvisLive:
 
     def interrupt(self) -> None:
         """Stop JARVIS mid-speech: drain queued audio and open mic immediately."""
-        self._interrupted = True
         q = self.audio_in_queue
+        with self._speaking_lock:
+            speaking = self._is_speaking
+        # Only flag an interrupt when a reply is actually playing or queued. The
+        # flag discards everything up to the next turn_complete, so setting it
+        # while idle (e.g. Escape pressed after a reconnect) silently threw away
+        # the NEXT answer — the phone's commands then went unanswered.
+        if not speaking and not (q and not q.empty()):
+            self.ui.write_log("SYS: Nothing to interrupt.")
+            return
+        self._interrupted = True
         if q:
             drained = 0
             while True:
@@ -1511,6 +1526,14 @@ class JarvisLive:
                                 self._visemes.feed_text(txt)
 
                         if sc.input_transcription and sc.input_transcription.text:
+                            # The user is speaking a new turn. Once the interrupted
+                            # reply has fully stopped, drop the flag so the answer
+                            # to THIS speech is not discarded too.
+                            if self._interrupted and self.audio_in_queue.empty():
+                                with self._speaking_lock:
+                                    _spk = self._is_speaking
+                                if not _spk:
+                                    self._interrupted = False
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
                                 in_buf.append(txt)
@@ -1708,8 +1731,20 @@ class JarvisLive:
                 except Exception:
                     pass
 
+                # A phone in live-voice mode plays the reply itself. The PC then
+                # writes the same length of silence, so speaking/echo timing
+                # still runs at real time but the PC speakers stay quiet.
+                out = bytes(batch)
+                dash = self._dashboard
+                if dash is not None and dash.has_phone_speaker:
+                    try:
+                        await dash.send_phone_audio(out)
+                    except Exception:
+                        pass
+                    out = bytes(len(out))
+
                 try:
-                    await asyncio.to_thread(stream.write, bytes(batch))
+                    await asyncio.to_thread(stream.write, out)
                 except (RuntimeError, asyncio.CancelledError):
                     break   # executor shutting down — exit cleanly
         except Exception as e:
@@ -2027,6 +2062,9 @@ class JarvisLive:
                     # has no desktop WAKE button — so it wakes JARVIS if asleep.
                     if self._wake_enabled and not self._awake:
                         self.wake(reason="remote command")
+                    # A new command is a new turn: a stale interrupt flag must
+                    # not swallow its answer.
+                    self._interrupted = False
                     await self.session.send_client_content(
                         turns={"role": "user", "parts": [{"text": text}]},
                         turn_complete=True,
