@@ -53,3 +53,4 @@ config/whatsapp_web/
 config/paired_devices.json
 config/mail_accounts.json
 config/contacts.json
+config/instagram.json
