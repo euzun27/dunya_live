@@ -988,6 +988,21 @@ class DashboardServer:
             asyncio.create_task(self._serve_alias())
         asyncio.create_task(self._serve_app_port())
 
+        # WhatsApp webhook: separate localhost-only server (see whatsapp_webhook.py),
+        # started only when config/whatsapp.json exists.
+        try:
+            from dashboard import whatsapp_webhook
+
+            def _wa_notify(records):
+                for r in records:
+                    who = r.get("name") or r.get("wa_id")
+                    asyncio.create_task(self.broadcast(
+                        {"type": "sys", "text": f"WhatsApp: {who} — {r.get('text', '')[:80]}"}))
+
+            asyncio.create_task(whatsapp_webhook.serve(on_messages=_wa_notify))
+        except Exception as e:
+            print(f"[WhatsApp] Webhook not started: {e}")
+
         cfg = uvicorn.Config(
             self.app, host="0.0.0.0", port=PORT, log_level="warning",
             **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)} if use_ssl else {}),
