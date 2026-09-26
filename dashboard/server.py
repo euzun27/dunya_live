@@ -38,6 +38,11 @@ except Exception:
 BASE_DIR    = Path(__file__).resolve().parent.parent
 STATIC_DIR  = Path(__file__).parent / "static"
 PORT        = 8000
+# Plain-HTTP port for the DUNYATEK mobile app. Android's WebView rejects the
+# self-signed certificate on PORT, so the app talks to this port instead.
+APP_PORT    = 8002
+# WebView origins of the DUNYATEK Tauri app (Android, desktop).
+APP_ORIGINS = ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"]
 MAX_UPLOAD_MB = 500
 
 
@@ -537,6 +542,14 @@ class DashboardServer:
 
     def _build_app(self) -> "FastAPI":
         app = FastAPI(docs_url=None, redoc_url=None)
+        # The mobile app runs on its own WebView origin, so /login needs CORS.
+        from fastapi.middleware.cors import CORSMiddleware
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=APP_ORIGINS,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type", "Authorization"],
+        )
 
         def _auth(req: Request) -> bool:
             tok = req.headers.get("authorization", "").removeprefix("Bearer ").strip()
@@ -853,6 +866,15 @@ class DashboardServer:
         print(f"[Dashboard] Manual entry:  {self._ip}:{PORT + 1}  (type in browser, accept cert once)")
         await uvicorn.Server(cfg).serve()
 
+    async def _serve_app_port(self) -> None:
+        """Plain-HTTP server on APP_PORT sharing the same app and in-memory state.
+        The mobile app's WebView cannot accept PORT's self-signed certificate, so it
+        always connects here. Pairing still needs the one-time key."""
+        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, APP_PORT)
+        cfg = uvicorn.Config(self.app, host="0.0.0.0", port=APP_PORT, log_level="warning")
+        print(f"[Dashboard] Mobile app:    http://{self._ip}:{APP_PORT}")
+        await uvicorn.Server(cfg).serve()
+
     async def serve(self) -> None:
         if not _DEPS_OK:
             print("[Dashboard] fastapi/uvicorn not installed — dashboard disabled.")
@@ -872,6 +894,7 @@ class DashboardServer:
 
         if use_ssl:
             asyncio.create_task(self._serve_alias())
+        asyncio.create_task(self._serve_app_port())
 
         cfg = uvicorn.Config(
             self.app, host="0.0.0.0", port=PORT, log_level="warning",
