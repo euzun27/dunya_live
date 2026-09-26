@@ -37,6 +37,8 @@ except Exception:
 
 BASE_DIR    = Path(__file__).resolve().parent.parent
 STATIC_DIR  = Path(__file__).parent / "static"
+# Paired phones' long-lived device tokens (gitignored). Delete it to unpair all phones.
+DEVICES_FILE = BASE_DIR / "config" / "paired_devices.json"
 PORT        = 8000
 # Plain-HTTP port for the DUNYATEK mobile app. Android's WebView rejects the
 # self-signed certificate on PORT, so the app talks to this port instead.
@@ -330,6 +332,33 @@ _ensure_crypto_js()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _tailscale_ip() -> str | None:
+    """This PC's Tailscale address (100.64.0.0/10), if Tailscale is running.
+    Lets the paired phone reach the PC from anywhere, not just the same Wi-Fi."""
+    def _is_ts(ip: str) -> bool:
+        try:
+            a, b = (int(x) for x in ip.split(".")[:2])
+            return a == 100 and 64 <= b <= 127
+        except Exception:
+            return False
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            if _is_ts(info[4][0]):
+                return info[4][0]
+    except Exception:
+        pass
+    try:
+        import subprocess
+        out = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True,
+                             timeout=3, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        ip = (out.stdout or "").strip().splitlines()[0] if out.stdout else ""
+        if _is_ts(ip):
+            return ip
+    except Exception:
+        pass
+    return None
+
+
 def _local_ip() -> str:
     """Return the best LAN-facing IPv4 address, no internet required."""
     # Method 1: route trick (fast, works when internet is available)
@@ -471,8 +500,10 @@ class DashboardServer:
         self._wake_callback               = None
         self._connect_callback            = None
         self._pending_keys: dict[str, float] = {}
-        self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
+        self._device_sessions: dict[str, dict] = self._load_devices()  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
+        # Phones whose audio socket asked to hear JARVIS's voice ("speaker=1").
+        self._phone_speakers: set[WebSocket]      = set()
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
@@ -538,6 +569,54 @@ class DashboardServer:
                 dead.add(ws)
         self._clients -= dead
 
+    # ── paired devices (kept across PC restarts) ─────────────────────────
+
+    @staticmethod
+    def _load_devices() -> dict:
+        try:
+            import json
+            data = json.loads(DEVICES_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_devices(self) -> None:
+        try:
+            import json
+            import os
+            DEVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            DEVICES_FILE.write_text(json.dumps(self._device_sessions), encoding="utf-8")
+            try:
+                os.chmod(DEVICES_FILE, 0o600)   # best effort — largely a no-op on Windows
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Dashboard] Could not save paired devices: {e}")
+
+    def _hosts(self) -> list[str]:
+        """Addresses the phone can try, in order: same Wi-Fi first, then Tailscale."""
+        hosts = [self._ip]
+        ts = _tailscale_ip()
+        if ts and ts not in hosts:
+            hosts.append(ts)
+        return hosts
+
+    # ── phone speaker ────────────────────────────────────────────────────
+
+    @property
+    def has_phone_speaker(self) -> bool:
+        return bool(self._phone_speakers)
+
+    async def send_phone_audio(self, pcm: bytes) -> None:
+        """Send JARVIS's reply audio (24 kHz 16-bit mono PCM) to connected phones."""
+        dead: set[WebSocket] = set()
+        for ws in list(self._phone_speakers):
+            try:
+                await ws.send_bytes(pcm)
+            except Exception:
+                dead.add(ws)
+        self._phone_speakers -= dead
+
     # ── FastAPI app ───────────────────────────────────────────────────────
 
     def _build_app(self) -> "FastAPI":
@@ -594,8 +673,14 @@ class DashboardServer:
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Remote connection established."}
                 ))
+                # A long-lived device token so the mobile app can reconnect later
+                # (e.g. from home over Tailscale) without scanning a new QR code.
+                dev_tok = secrets.token_urlsafe(32)
+                self._device_sessions[dev_tok] = {"session_key": entered}
+                self._save_devices()
                 # Bearer token in response body — no cookies needed (works on any browser/HTTP)
-                return JSONResponse({"ok": True, "token": tok})
+                return JSONResponse({"ok": True, "token": tok,
+                                     "device_token": dev_tok, "hosts": self._hosts()})
             return JSONResponse({"ok": False, "error": "Invalid or expired key"},
                                 status_code=401)
 
@@ -611,8 +696,8 @@ class DashboardServer:
        display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
   h2{color:#f87171;margin-bottom:12px}p{color:#5e6a7e;font-size:14px}
 </style></head>
-<body><div><h2>Link Expired</h2>
-<p>Press <strong style="color:#dde3ed">Remote Control</strong> in JARVIS to get a new QR code.</p>
+<body><div><h2>Bağlantının süresi doldu</h2>
+<p>Yeni QR kod için DÜNYATEK programında <strong style="color:#dde3ed">Remote Control</strong> düğmesine basın.</p>
 </div></body></html>""")
 
             del self._pending_keys[key]
@@ -643,7 +728,7 @@ class DashboardServer:
   localStorage.setItem('jarvis_device_token','{dev_tok}');
   setTimeout(function(){{location.replace('/')}},400);
 </script>
-<p>Connecting to JARVIS…</p>
+<p>DÜNYATEK'e bağlanıyor…</p>
 </body></html>""")
 
         @app.post("/api/device-login")
@@ -666,7 +751,8 @@ class DashboardServer:
             asyncio.create_task(self.broadcast(
                 {"type": "sys", "text": "Known device reconnected automatically."}
             ))
-            return JSONResponse({"ok": True, "token": tok, "key": session_key})
+            return JSONResponse({"ok": True, "token": tok, "key": session_key,
+                                 "hosts": self._hosts()})
 
         @app.post("/api/revoke-devices")
         async def revoke_devices(req: Request):
@@ -675,6 +761,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             count = len(self._device_sessions)
             self._device_sessions.clear()
+            self._save_devices()
             return JSONResponse({"ok": True, "revoked": count})
 
         @app.post("/api/command")
@@ -707,12 +794,16 @@ class DashboardServer:
         # ── Phone mic real-time audio → Gemini Live ──────────────────────────
 
         @app.websocket("/ws/phone-audio")
-        async def phone_audio_ws(websocket: WebSocket, token: str = ""):
+        async def phone_audio_ws(websocket: WebSocket, token: str = "", speaker: str = ""):
             tok = token.strip()
             if not tok or tok not in self._tokens:
                 await websocket.close(code=4001)
                 return
             await websocket.accept()
+            # speaker=1: the mobile app also plays JARVIS's voice on the phone,
+            # over this same socket, instead of the PC speakers.
+            if speaker == "1":
+                self._phone_speakers.add(websocket)
             asyncio.create_task(self.broadcast(
                 {"type": "sys", "text": "Phone microphone live."}
             ))
@@ -728,6 +819,7 @@ class DashboardServer:
             except WebSocketDisconnect:
                 pass
             finally:
+                self._phone_speakers.discard(websocket)
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Phone microphone stopped."}
                 ))

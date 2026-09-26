@@ -50,3 +50,4 @@ config/certs/
 config/whatsapp_web/
 **/token*.json
 **/client_secret*.json
+config/paired_devices.json
