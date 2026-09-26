@@ -54,3 +54,6 @@ config/paired_devices.json
 config/mail_accounts.json
 config/contacts.json
 config/instagram.json
+config/whatsapp.json
+config/whatsapp_messages.jsonl
+config/whatsapp_seen.json
